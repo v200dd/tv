@@ -8,6 +8,7 @@ import '../models/live_source.dart';
 import '../models/epg_program.dart';
 import '../models/m3u_content.dart';
 import 'api_service.dart';
+
 import 'package:http/http.dart' as http;
 import 'package:xml/xml_events.dart';
 import 'package:gbk_codec/gbk_codec.dart';
@@ -40,8 +41,9 @@ class LiveService {
   static const Duration _epgCacheDuration = Duration(hours: 2);
 
   /// 获取所有直播源（乐观缓存：过期时先返回旧数据，后台异步刷新）
-  static Future<List<LiveSource>> getLiveSources(
-      {bool forceRefresh = false}) async {
+  static Future<List<LiveSource>> getLiveSources({
+    bool forceRefresh = false,
+  }) async {
     // 如果有缓存且未过期，直接返回
     if (!forceRefresh &&
         _liveSourcesCache != null &&
@@ -80,8 +82,10 @@ class LiveService {
   }
 
   /// 获取指定直播源的频道列表（乐观缓存：过期时先返回旧数据，后台异步刷新）
-  static Future<List<LiveChannel>> getLiveChannels(String sourceKey,
-      {bool forceRefresh = false}) async {
+  static Future<List<LiveChannel>> getLiveChannels(
+    String sourceKey, {
+    bool forceRefresh = false,
+  }) async {
     // 如果有缓存且未过期，直接返回
     if (!forceRefresh && _channelsCache.containsKey(sourceKey)) {
       final cache = _channelsCache[sourceKey]!;
@@ -104,12 +108,27 @@ class LiveService {
 
   /// 获取并缓存频道列表
   static Future<List<LiveChannel>> _fetchAndCacheChannels(
-      String sourceKey) async {
+    String sourceKey,
+  ) async {
     try {
       // 从缓存中获取对应的 LiveSource
-      final liveSource = _liveSourcesCache?.data.firstWhere(
-          (source) => source.key == sourceKey,
-          orElse: () => throw Exception('未找到直播源: $sourceKey'));
+      LiveSource? liveSource;
+      final cachedSources = _liveSourcesCache?.data ?? [];
+      for (final source in cachedSources) {
+        if (source.key == sourceKey) {
+          liveSource = source;
+          break;
+        }
+      }
+      if (liveSource == null) {
+        final localSources = await LocalModeStorageService.getLiveSources();
+        for (final source in localSources) {
+          if (source.key == sourceKey) {
+            liveSource = source;
+            break;
+          }
+        }
+      }
 
       if (liveSource == null) {
         throw Exception('未找到直播源: $sourceKey');
@@ -233,14 +252,16 @@ class LiveService {
 
           // 只有当有名称和URL时才添加到结果中，并验证URL格式
           if (name.isNotEmpty && url.isNotEmpty && Uri.tryParse(url) != null) {
-            channels.add(LiveChannel(
-              id: '$sourceKey-$channelIndex',
-              tvgId: tvgId,
-              name: name,
-              logo: logo,
-              group: group,
-              url: url,
-            ));
+            channels.add(
+              LiveChannel(
+                id: '$sourceKey-$channelIndex',
+                tvgId: tvgId,
+                name: name,
+                logo: logo,
+                group: group,
+                url: url,
+              ),
+            );
             channelIndex++;
           }
 
@@ -254,8 +275,11 @@ class LiveService {
   }
 
   /// 获取 EPG 节目单（乐观缓存：过期时先返回旧数据，后台异步刷新）
-  static Future<EpgData?> getLiveEpg(String tvgId, String sourceKey,
-      {bool forceRefresh = false}) async {
+  static Future<EpgData?> getLiveEpg(
+    String tvgId,
+    String sourceKey, {
+    bool forceRefresh = false,
+  }) async {
     // 如果有缓存且未过期，从缓存中查找对应 tvgId 的数据
     if (!forceRefresh && _epgCache.containsKey(sourceKey)) {
       final cache = _epgCache[sourceKey]!;
@@ -335,12 +359,14 @@ class LiveService {
       for (final entry in epgMap.entries) {
         final tvgId = entry.key;
         final programs = entry.value
-            .map((p) => EpgProgram(
-                  channelId: tvgId,
-                  title: p['title'] ?? '',
-                  startTime: _parseEpgDateTime(p['start'] ?? ''),
-                  endTime: _parseEpgDateTime(p['end'] ?? ''),
-                ))
+            .map(
+              (p) => EpgProgram(
+                channelId: tvgId,
+                title: p['title'] ?? '',
+                startTime: _parseEpgDateTime(p['start'] ?? ''),
+                endTime: _parseEpgDateTime(p['end'] ?? ''),
+              ),
+            )
             .toList();
 
         epgDataMap[tvgId] = EpgData(
@@ -360,7 +386,10 @@ class LiveService {
 
   /// 解析 EPG XML 数据（使用流式解析）
   static Future<Map<String, List<Map<String, String>>>> _parseEpg(
-      String epgUrl, String userAgent, List<String> tvgIds) async {
+    String epgUrl,
+    String userAgent,
+    List<String> tvgIds,
+  ) async {
     if (epgUrl.isEmpty) {
       return {};
     }
@@ -394,19 +423,34 @@ class LiveService {
               inProgramme = true;
               // 提取属性
               currentTvgId = event.attributes
-                  .firstWhere((attr) => attr.name == 'channel',
-                      orElse: () => XmlEventAttribute(
-                          '', '', XmlAttributeType.DOUBLE_QUOTE))
+                  .firstWhere(
+                    (attr) => attr.name == 'channel',
+                    orElse: () => XmlEventAttribute(
+                      '',
+                      '',
+                      XmlAttributeType.DOUBLE_QUOTE,
+                    ),
+                  )
                   .value;
               currentStart = event.attributes
-                  .firstWhere((attr) => attr.name == 'start',
-                      orElse: () => XmlEventAttribute(
-                          '', '', XmlAttributeType.DOUBLE_QUOTE))
+                  .firstWhere(
+                    (attr) => attr.name == 'start',
+                    orElse: () => XmlEventAttribute(
+                      '',
+                      '',
+                      XmlAttributeType.DOUBLE_QUOTE,
+                    ),
+                  )
                   .value;
               currentEnd = event.attributes
-                  .firstWhere((attr) => attr.name == 'stop',
-                      orElse: () => XmlEventAttribute(
-                          '', '', XmlAttributeType.DOUBLE_QUOTE))
+                  .firstWhere(
+                    (attr) => attr.name == 'stop',
+                    orElse: () => XmlEventAttribute(
+                      '',
+                      '',
+                      XmlAttributeType.DOUBLE_QUOTE,
+                    ),
+                  )
                   .value;
               currentTitle = '';
 

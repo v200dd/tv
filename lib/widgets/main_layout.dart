@@ -3,13 +3,16 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:provider/provider.dart';
 import 'package:selene/services/search_service.dart';
 import 'package:selene/services/user_data_service.dart';
+
 import '../services/theme_service.dart';
 import '../services/api_service.dart';
 import '../utils/device_utils.dart';
 import '../utils/font_utils.dart';
 import 'user_menu.dart';
+
 import 'dart:io' show Platform;
 import 'dart:async';
+
 import 'windows_title_bar.dart';
 
 class MainLayout extends StatefulWidget {
@@ -324,9 +327,7 @@ class _MainLayoutState extends State<MainLayout> {
                             // 固定 Header
                             _buildHeader(context, themeService),
                             // 主要内容区域
-                            Expanded(
-                              child: widget.content,
-                            ),
+                            Expanded(child: widget.content),
                           ],
                         ),
                       ),
@@ -365,12 +366,7 @@ class _MainLayoutState extends State<MainLayout> {
             : MediaQuery.of(context).padding.top + 8;
 
     return Container(
-      padding: EdgeInsets.only(
-        top: topPadding,
-        left: 16,
-        right: 16,
-        bottom: 8,
-      ),
+      padding: EdgeInsets.only(top: topPadding, left: 16, right: 16, bottom: 8),
       decoration: BoxDecoration(
         color: widget.isSearchMode
             ? themeService.isDarkMode
@@ -464,32 +460,26 @@ class _MainLayoutState extends State<MainLayout> {
             child: GestureDetector(
               onTap: widget.onHomeTap,
               behavior: HitTestBehavior.opaque,
-              child: Text(
-                'tv',
-                style: FontUtils.sourceCodePro(
-                  fontSize: 24,
-                  fontWeight: FontWeight.w400,
-                  color: themeService.isDarkMode
-                      ? Colors.white
-                      : const Color(0xFF2c3e50),
-                  letterSpacing: 1.5,
-                ),
+              child: Image.asset(
+                'tv.png',
+                width: 34,
+                height: 34,
+                fit: BoxFit.contain,
               ),
             ),
           ),
           // 右侧按钮组
-          Positioned(
-            right: 0,
-            top: 4,
-            child: _buildRightButtons(themeService),
-          ),
+          Positioned(right: 0, top: 4, child: _buildRightButtons(themeService)),
         ],
       ),
     );
   }
 
   Widget _buildSearchHeader(
-      BuildContext context, ThemeService themeService, bool isTablet) {
+    BuildContext context,
+    ThemeService themeService,
+    bool isTablet,
+  ) {
     final searchBoxWidget = CompositedTransformTarget(
       link: _layerLink,
       child: Container(
@@ -555,8 +545,9 @@ class _MainLayoutState extends State<MainLayout> {
                               (widget.searchQuery?.trim().isNotEmpty ?? false)
                                   ? () {
                                       _removeOverlay();
-                                      widget.onSearchSubmitted
-                                          ?.call(widget.searchQuery!);
+                                      widget.onSearchSubmitted?.call(
+                                        widget.searchQuery!,
+                                      );
                                     }
                                   : null,
                           behavior: HitTestBehavior.opaque,
@@ -741,10 +732,7 @@ class _MainLayoutState extends State<MainLayout> {
               ),
             ),
             // 右侧按钮 - 垂直居中
-            Positioned(
-              right: 0,
-              child: _buildRightButtons(themeService),
-            ),
+            Positioned(right: 0, child: _buildRightButtons(themeService)),
           ],
         ),
       );
@@ -807,10 +795,7 @@ class _MainLayoutState extends State<MainLayout> {
                   duration: const Duration(milliseconds: 300),
                   transitionBuilder:
                       (Widget child, Animation<double> animation) {
-                    return ScaleTransition(
-                      scale: animation,
-                      child: child,
-                    );
+                    return ScaleTransition(scale: animation, child: child);
                   },
                   child: Icon(
                     themeService.isDarkMode
@@ -889,7 +874,7 @@ class _MainLayoutState extends State<MainLayout> {
       {'icon': LucideIcons.tv, 'label': '剧集'},
       {'icon': LucideIcons.cat, 'label': '动漫'},
       {'icon': LucideIcons.clover, 'label': '综艺'},
-      {'icon': LucideIcons.radio, 'label': '直播'},
+      {'icon': LucideIcons.radio, 'label': '频道'},
       {'icon': LucideIcons.film, 'label': '短剧'},
       {'icon': LucideIcons.users, 'label': '观影房'},
       {'icon': LucideIcons.download, 'label': '下载'},
@@ -931,16 +916,18 @@ class _MainLayoutState extends State<MainLayout> {
               children: navItems
                   .asMap()
                   .entries
-                  .expand((entry) => [
-                        _buildNavItem(
-                          themeService: themeService,
-                          index: entry.key,
-                          item: entry.value,
-                          isTablet: true,
-                        ),
-                        if (entry.key < navItems.length - 1)
-                          const SizedBox(width: 20),
-                      ])
+                  .expand(
+                    (entry) => [
+                      _buildNavItem(
+                        themeService: themeService,
+                        index: entry.key,
+                        item: entry.value,
+                        isTablet: true,
+                      ),
+                      if (entry.key < navItems.length - 1)
+                        const SizedBox(width: 20),
+                    ],
+                  )
                   .toList(),
             );
           }
@@ -954,14 +941,16 @@ class _MainLayoutState extends State<MainLayout> {
                 : start + perRow;
             final children = <Widget>[];
             for (var index = start; index < end; index++) {
-              children.add(Expanded(
-                child: _buildNavItem(
-                  themeService: themeService,
-                  index: index,
-                  item: navItems[index],
-                  isTablet: isTablet,
+              children.add(
+                Expanded(
+                  child: _buildNavItem(
+                    themeService: themeService,
+                    index: index,
+                    item: navItems[index],
+                    isTablet: isTablet,
+                  ),
                 ),
-              ));
+              );
             }
             for (var filler = end - start; filler < perRow; filler++) {
               children.add(const Expanded(child: SizedBox.shrink()));

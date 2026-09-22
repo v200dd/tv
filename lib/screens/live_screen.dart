@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
+
 import '../services/live_service.dart';
+import '../services/local_mode_storage_service.dart';
 import '../models/live_channel.dart';
 import '../models/live_source.dart';
 import '../utils/font_utils.dart';
 import '../utils/device_utils.dart';
 import '../services/theme_service.dart';
+
 import 'package:provider/provider.dart';
+
 import 'live_player_screen.dart';
 import '../widgets/filter_pill_hover.dart';
 import '../widgets/filter_options_selector.dart';
@@ -30,6 +34,77 @@ class _LiveScreenState extends State<LiveScreen>
   final ScrollController _scrollController = ScrollController();
   late AnimationController _refreshIconController;
   bool _isRefreshButtonHovered = false;
+
+  Future<void> _showImportSourceDialog() async {
+    final nameController = TextEditingController();
+    final urlController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    final imported = await showDialog<LiveSource>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('导入频道源'),
+        content: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: nameController,
+                decoration: const InputDecoration(labelText: '源名称'),
+                validator: (value) =>
+                    value == null || value.trim().isEmpty ? '请输入源名称' : null,
+              ),
+              TextFormField(
+                controller: urlController,
+                keyboardType: TextInputType.url,
+                decoration: const InputDecoration(labelText: 'M3U/M3U8 地址'),
+                validator: (value) {
+                  final uri = Uri.tryParse(value?.trim() ?? '');
+                  return uri == null || !{'http', 'https'}.contains(uri.scheme)
+                      ? '请输入有效的 HTTP/HTTPS 地址'
+                      : null;
+                },
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (!formKey.currentState!.validate()) return;
+              Navigator.pop(
+                dialogContext,
+                LiveSource(
+                  key: 'local-${DateTime.now().millisecondsSinceEpoch}',
+                  name: nameController.text.trim(),
+                  url: urlController.text.trim(),
+                  ua: '',
+                  epg: '',
+                  from: 'custom',
+                  disabled: false,
+                ),
+              );
+            },
+            child: const Text('保存并加载'),
+          ),
+        ],
+      ),
+    );
+    nameController.dispose();
+    urlController.dispose();
+    if (imported == null || !mounted) return;
+
+    final existing = await LocalModeStorageService.getLiveSources();
+    existing.removeWhere((source) => source.url == imported.url);
+    existing.add(imported);
+    await LocalModeStorageService.saveLiveSources(existing);
+    LiveService.clearAllChannelsAndEpgCache();
+    await _loadChannels(source: imported);
+  }
 
   @override
   void initState() {
@@ -70,7 +145,13 @@ class _LiveScreenState extends State<LiveScreen>
 
     try {
       // 1. 获取所有直播源
-      final liveSources = await LiveService.getLiveSources();
+      final remoteSources = await LiveService.getLiveSources();
+      final localSources = await LocalModeStorageService.getLiveSources();
+      final byUrl = <String, LiveSource>{
+        for (final source in remoteSources) source.url: source,
+      };
+      for (final source in localSources) byUrl[source.url] = source;
+      final liveSources = byUrl.values.toList();
       if (!mounted) return;
 
       if (liveSources.isEmpty) {
@@ -120,10 +201,9 @@ class _LiveScreenState extends State<LiveScreen>
 
       // 5. 转换为 LiveChannelGroup 列表
       final groups = groupedChannels.entries
-          .map((entry) => LiveChannelGroup(
-                name: entry.key,
-                channels: entry.value,
-              ))
+          .map(
+            (entry) => LiveChannelGroup(name: entry.key, channels: entry.value),
+          )
           .toList();
 
       if (mounted) {
@@ -158,7 +238,15 @@ class _LiveScreenState extends State<LiveScreen>
     try {
       LiveService.clearAllChannelsAndEpgCache();
       // 1. 重新获取所有直播源
-      final liveSources = await LiveService.getLiveSources(forceRefresh: true);
+      final remoteSources = await LiveService.getLiveSources(
+        forceRefresh: true,
+      );
+      final localSources = await LocalModeStorageService.getLiveSources();
+      final byUrl = <String, LiveSource>{
+        for (final source in remoteSources) source.url: source,
+      };
+      for (final source in localSources) byUrl[source.url] = source;
+      final liveSources = byUrl.values.toList();
       if (!mounted) return;
 
       if (liveSources.isEmpty) {
@@ -215,10 +303,9 @@ class _LiveScreenState extends State<LiveScreen>
 
       // 5. 转换为 LiveChannelGroup 列表
       final groups = groupedChannels.entries
-          .map((entry) => LiveChannelGroup(
-                name: entry.key,
-                channels: entry.value,
-              ))
+          .map(
+            (entry) => LiveChannelGroup(name: entry.key, channels: entry.value),
+          )
           .toList();
 
       if (mounted) {
@@ -253,15 +340,10 @@ class _LiveScreenState extends State<LiveScreen>
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(
-          message,
-          style: FontUtils.poppins(color: Colors.white),
-        ),
+        content: Text(message, style: FontUtils.poppins(color: Colors.white)),
         backgroundColor: const Color(0xFF3498DB),
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         margin: const EdgeInsets.all(16),
       ),
     );
@@ -272,8 +354,10 @@ class _LiveScreenState extends State<LiveScreen>
       return _channelGroups.expand((g) => g.channels).toList();
     } else {
       return _channelGroups
-          .firstWhere((g) => g.name == _selectedGroup,
-              orElse: () => LiveChannelGroup(name: '', channels: []))
+          .firstWhere(
+            (g) => g.name == _selectedGroup,
+            orElse: () => LiveChannelGroup(name: '', channels: []),
+          )
           .channels;
     }
   }
@@ -327,41 +411,36 @@ class _LiveScreenState extends State<LiveScreen>
       ),
       child: Row(
         children: [
-          // 直播源筛选（只有多个源时显示）
+          // 频道源筛选（只有多个源时显示）
           if (showSourceFilter) ...[
-            _buildFilterPill(
-              '直播源',
-              sourceOptions,
-              _currentSource?.key ?? '',
-              (value) {
-                final source = _liveSources.firstWhere((s) => s.key == value);
-                // 立即更新选中的源
-                setState(() {
-                  _currentSource = source;
-                  _selectedGroup = '全部';
-                });
-                _loadChannels(source: source);
-                _scrollToTop();
-              },
-              themeService,
-            ),
+            _buildFilterPill('频道源', sourceOptions, _currentSource?.key ?? '', (
+              value,
+            ) {
+              final source = _liveSources.firstWhere((s) => s.key == value);
+              // 立即更新选中的源
+              setState(() {
+                _currentSource = source;
+                _selectedGroup = '全部';
+              });
+              _loadChannels(source: source);
+              _scrollToTop();
+            }, themeService),
             const SizedBox(width: 8),
           ],
           // 分组筛选（首次加载完成后才显示）
           if (showGroupFilter)
-            _buildFilterPill(
-              '分组',
-              groupOptions,
-              _selectedGroup,
-              (value) {
-                setState(() {
-                  _selectedGroup = value;
-                });
-                _scrollToTop();
-              },
-              themeService,
-            ),
+            _buildFilterPill('分组', groupOptions, _selectedGroup, (value) {
+              setState(() {
+                _selectedGroup = value;
+              });
+              _scrollToTop();
+            }, themeService),
           const Spacer(),
+          IconButton(
+            tooltip: '导入频道源',
+            onPressed: _showImportSourceDialog,
+            icon: const Icon(Icons.add_link),
+          ),
           // 刷新按钮
           Padding(
             padding: const EdgeInsets.only(right: 4),
@@ -439,11 +518,12 @@ class _LiveScreenState extends State<LiveScreen>
   }
 
   void _showFilterOptions(
-      BuildContext context,
-      String title,
-      List<SelectorOption> options,
-      String selectedValue,
-      ValueChanged<String> onSelected) {
+    BuildContext context,
+    String title,
+    List<SelectorOption> options,
+    String selectedValue,
+    ValueChanged<String> onSelected,
+  ) {
     if (DeviceUtils.isPC()) {
       // PC端使用 filter_options_selector.dart 中的 PC 组件
       showFilterOptionsSelector(
@@ -501,7 +581,9 @@ class _LiveScreenState extends State<LiveScreen>
                   child: SingleChildScrollView(
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: horizontalPadding, vertical: 8),
+                        horizontal: horizontalPadding,
+                        vertical: 8,
+                      ),
                       child: Wrap(
                         alignment: WrapAlignment.start, // 左对齐
                         spacing: spacing,
@@ -518,7 +600,9 @@ class _LiveScreenState extends State<LiveScreen>
                               borderRadius: BorderRadius.circular(8),
                               child: Container(
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 8),
+                                  horizontal: 12,
+                                  vertical: 8,
+                                ),
                                 alignment: Alignment.centerLeft, // 内容左对齐
                                 decoration: BoxDecoration(
                                   color: isSelected
@@ -626,10 +710,7 @@ class _LiveScreenState extends State<LiveScreen>
                 borderRadius: BorderRadius.circular(8),
               ),
             ),
-            child: Text(
-              '刷新',
-              style: FontUtils.poppins(color: Colors.white),
-            ),
+            child: Text('刷新', style: FontUtils.poppins(color: Colors.white)),
           ),
         ],
       ),
@@ -680,10 +761,8 @@ class _LiveScreenState extends State<LiveScreen>
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => LivePlayerScreen(
-              channel: channel,
-              source: _currentSource!,
-            ),
+            builder: (context) =>
+                LivePlayerScreen(channel: channel, source: _currentSource!),
           ),
         ).then((_) {
           if (mounted) {
@@ -800,7 +879,9 @@ class _LiveChannelCardState extends State<_LiveChannelCard> {
                         ClipRRect(
                           borderRadius: BorderRadius.circular(12),
                           child: widget.buildChannelLogo(
-                              widget.channel, widget.themeService),
+                            widget.channel,
+                            widget.themeService,
+                          ),
                         ),
                       ],
                     ),
