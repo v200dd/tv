@@ -455,16 +455,20 @@ class _MainLayoutState extends State<MainLayout> {
               ),
             ),
           ),
-          // 完全居中的 Logo
+          // 完全居中的文字品牌
           Center(
             child: GestureDetector(
               onTap: widget.onHomeTap,
               behavior: HitTestBehavior.opaque,
-              child: Image.asset(
-                'tv.png',
-                width: 34,
-                height: 34,
-                fit: BoxFit.contain,
+              child: Text(
+                '小熊tv',
+                style: FontUtils.poppins(
+                  color: themeService.isDarkMode
+                      ? const Color(0xFFffffff)
+                      : const Color(0xFF2c3e50),
+                  fontSize: 20,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ),
@@ -878,6 +882,7 @@ class _MainLayoutState extends State<MainLayout> {
       {'icon': LucideIcons.film, 'label': '短剧'},
       {'icon': LucideIcons.users, 'label': '观影房'},
       {'icon': LucideIcons.download, 'label': '下载'},
+      {'icon': LucideIcons.library, 'label': 'Emby'},
     ];
 
     final isTablet = DeviceUtils.isTablet(context);

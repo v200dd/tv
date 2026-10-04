@@ -3,6 +3,7 @@ import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
 
 import '../services/user_data_service.dart';
 import '../utils/font_utils.dart';
@@ -198,7 +199,7 @@ class _LoginScreenState extends State<LoginScreen> {
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Text(
-          'tv',
+          '小熊tv',
           style: FontUtils.sourceCodePro(
             fontSize: 42,
             fontWeight: FontWeight.w400,
@@ -243,6 +244,21 @@ class _LoginScreenState extends State<LoginScreen> {
                 onSubmitted: (_) => _handleLogin(),
                 validator: (value) =>
                     value == null || value.isEmpty ? '请输入密码' : null,
+              ),
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: _openRegister,
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xFF2c3e50),
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                ),
+                child: Text(
+                  '注册',
+                  style: FontUtils.poppins(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
               ),
               const SizedBox(height: 32),
               ElevatedButton(
@@ -316,6 +332,15 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
       ],
     );
+  }
+
+  Future<void> _openRegister() async {
+    final entered = _serverUrlController.text.trim();
+    final baseUrl = _normalizeServerUrl(
+      entered.isEmpty ? UserDataService.defaultServerUrl : entered,
+    );
+    final uri = Uri.parse('$baseUrl/register');
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
   Widget _buildTextField({
