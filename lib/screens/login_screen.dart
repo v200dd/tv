@@ -3,12 +3,12 @@ import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:url_launcher/url_launcher.dart';
 
 import '../services/user_data_service.dart';
 import '../utils/font_utils.dart';
 import '../widgets/windows_title_bar.dart';
 import 'home_screen.dart';
+import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -245,15 +245,21 @@ class _LoginScreenState extends State<LoginScreen> {
                 validator: (value) =>
                     value == null || value.isEmpty ? '请输入密码' : null,
               ),
-              const SizedBox(height: 8),
-              TextButton(
-                onPressed: _openRegister,
+              const SizedBox(height: 12),
+              OutlinedButton(
+                onPressed: () async {
+                  await Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const RegisterScreen()),
+                  );
+                  _loadSavedCredentials();
+                },
                 style: TextButton.styleFrom(
                   foregroundColor: const Color(0xFF2c3e50),
-                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  side: const BorderSide(color: Color(0xFF2c3e50)),
                 ),
                 child: Text(
-                  '注册',
+                  '注册账号',
                   style: FontUtils.poppins(
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
@@ -332,15 +338,6 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
       ],
     );
-  }
-
-  Future<void> _openRegister() async {
-    final entered = _serverUrlController.text.trim();
-    final baseUrl = _normalizeServerUrl(
-      entered.isEmpty ? UserDataService.defaultServerUrl : entered,
-    );
-    final uri = Uri.parse('$baseUrl/register');
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
   Widget _buildTextField({
