@@ -2,6 +2,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class UserDataService {
   static const String defaultServerUrl = 'https://cf.motv.200996.xyz';
+
+  /// 国内直连线路。登录页上的「切换国内地址」按钮切到这条线路，
+  /// 按钮本身只显示「国内地址」文案，不把地址暴露在界面上。
+  static const String domesticServerUrl = 'https://tv.v200dd.top';
   static const String _serverUrlKey = 'server_url';
   static const String _usernameKey = 'username';
   static const String _passwordKey = 'password';

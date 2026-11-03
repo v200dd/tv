@@ -19,6 +19,31 @@ if ! grep -q "_showServerUrlField" "$repo_root/lib/screens/login_screen.dart"; t
   exit 1
 fi
 
+# 国内线路必须内置成常量，登录页给一个一键切换入口。
+if ! grep -q "domesticServerUrl" \
+  "$repo_root/lib/services/user_data_service.dart"; then
+  echo "domestic server URL is not configured"
+  exit 1
+fi
+
+if ! grep -q "切换国内地址" "$repo_root/lib/screens/login_screen.dart"; then
+  echo "login screen must offer a one-tap domestic address switch"
+  exit 1
+fi
+
+# 切换按钮上只写线路名，地址本身不能出现在界面文案里。
+if grep -q "Text(UserDataService.domesticServerUrl" \
+  "$repo_root/lib/screens/login_screen.dart"; then
+  echo "login screen must not print the domestic server URL"
+  exit 1
+fi
+
+# 点了切换必须真的走国内线路，不能只改按钮文案。
+if ! grep -q "_isDomesticServer" "$repo_root/lib/screens/login_screen.dart"; then
+  echo "login screen must track the selected server line"
+  exit 1
+fi
+
 if grep -q "_serverUrlController.text =\s*$" \
   "$repo_root/lib/screens/login_screen.dart" && \
   grep -q "userData\['serverUrl'\] ?? UserDataService.defaultServerUrl" \

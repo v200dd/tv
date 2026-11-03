@@ -26,6 +26,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
   /// 「更换地址」是否展开。默认收起，页面上只有账号和密码。
   bool _showServerUrlField = false;
+
+  /// 当前是否在使用国内线路。只影响内置地址，不把地址显示到界面上。
+  bool _isDomesticServer = false;
   bool _isLoading = false;
   bool _isFormValid = false;
 
@@ -42,12 +45,45 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!mounted) return;
     // 只回填用户自己填过的地址；默认地址永不显示，留空即代表使用默认。
     final saved = userData['serverUrl']?.trim() ?? '';
-    _serverUrlController.text =
-        saved.isEmpty || saved == UserDataService.defaultServerUrl ? '' : saved;
+    final isBuiltIn =
+        saved.isEmpty ||
+        saved == UserDataService.defaultServerUrl ||
+        saved == UserDataService.domesticServerUrl;
+    _serverUrlController.text = isBuiltIn ? '' : saved;
+    _isDomesticServer = saved == UserDataService.domesticServerUrl;
     _showServerUrlField = _serverUrlController.text.isNotEmpty;
     _usernameController.text = userData['username'] ?? '';
     _passwordController.text = userData['password'] ?? '';
     _validateForm();
+  }
+
+  /// 当前生效的服务器地址：手填优先，其次看选的是国内线路还是默认线路。
+  String get _effectiveServerUrl {
+    final entered = _serverUrlController.text.trim();
+    if (entered.isNotEmpty) return _normalizeServerUrl(entered);
+    return _isDomesticServer
+        ? UserDataService.domesticServerUrl
+        : UserDataService.defaultServerUrl;
+  }
+
+  /// 一键切换国内 / 默认线路。界面上不出现具体地址，点完立即生效并持久化。
+  Future<void> _toggleServerLine() async {
+    final next = !_isDomesticServer;
+    final target = next
+        ? UserDataService.domesticServerUrl
+        : UserDataService.defaultServerUrl;
+    await UserDataService.saveServerUrl(target);
+    if (!mounted) return;
+    setState(() {
+      _isDomesticServer = next;
+      // 切线路时清掉手填地址，避免手填地址盖住刚选好的线路。
+      _serverUrlController.clear();
+      _showServerUrlField = false;
+    });
+    _showToast(
+      next ? '已切换到国内地址' : '已切换到默认地址',
+      next ? const Color(0xFF27ae60) : const Color(0xFF2c3e50),
+    );
   }
 
   void _validateForm() {
@@ -89,15 +125,13 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _handleLogin() async {
-    if (_isLoading || !_isFormValid || !_formKey.currentState!.validate())
+    if (_isLoading || !_isFormValid || !_formKey.currentState!.validate()) {
       return;
+    }
 
     setState(() => _isLoading = true);
     try {
-      final entered = _serverUrlController.text.trim();
-      final baseUrl = _normalizeServerUrl(
-        entered.isEmpty ? UserDataService.defaultServerUrl : entered,
-      );
+      final baseUrl = _effectiveServerUrl;
       final response = await http
           .post(
             Uri.parse('$baseUrl/api/login'),
@@ -302,6 +336,33 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
               ),
               const SizedBox(height: 12),
+              // 「切换国内地址」：按钮上只写线路名，不显示具体地址；
+              // 点一下自动切到国内线路，再点一下切回默认线路。
+              Align(
+                alignment: Alignment.center,
+                child: TextButton.icon(
+                  onPressed: _isLoading ? null : _toggleServerLine,
+                  style: TextButton.styleFrom(
+                    foregroundColor: _isDomesticServer
+                        ? const Color(0xFF27ae60)
+                        : const Color(0xFF3498db),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                  ),
+                  icon: Icon(
+                    _isDomesticServer
+                        ? Icons.check_circle_outline
+                        : Icons.swap_horiz,
+                    size: 16,
+                  ),
+                  label: Text(
+                    _isDomesticServer ? '已切换国内地址 · 点此切回' : '切换国内地址',
+                    style: FontUtils.poppins(fontSize: 13),
+                  ),
+                ),
+              ),
               // 「更换地址」：不点开不显示输入框；留空即使用内置默认地址。
               Align(
                 alignment: Alignment.center,
@@ -324,7 +385,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 _buildTextField(
                   controller: _serverUrlController,
                   label: '服务器地址',
-                  hint: '留空使用默认地址',
+                  hint: '留空使用当前线路',
                   icon: Icons.link,
                   keyboardType: TextInputType.url,
                   textInputAction: TextInputAction.done,
