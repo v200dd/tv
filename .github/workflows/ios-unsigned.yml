@@ -16,7 +16,7 @@ concurrency:
 jobs:
   build-ios:
     name: Build unsigned Runner.app
-    runs-on: macos-15
+    runs-on: macos-14
     timeout-minutes: 45
 
     steps:
