@@ -6,6 +6,7 @@ import '../widgets/video_player_surface.dart';
 import '../widgets/video_player_widget.dart';
 import '../widgets/video_card.dart';
 import '../services/api_service.dart';
+import '../services/emby_service.dart';
 import '../services/m3u8_service.dart';
 import '../services/douban_service.dart';
 import '../services/user_data_service.dart';
@@ -212,11 +213,14 @@ class _PlayerScreenState extends State<PlayerScreen>
     initParam();
 
     // 执行查询
-    allSources = await fetchSourcesData(
-        (searchTitle.isNotEmpty) ? searchTitle : videoTitle);
+    allSources = EmbyService.isSource(currentSource)
+        ? await fetchSourceDetail(currentSource, currentID)
+        : await fetchSourcesData(
+            (searchTitle.isNotEmpty) ? searchTitle : videoTitle);
     if (!_isActiveLoad(loadGeneration)) return;
 
-    if (currentSource.isNotEmpty &&
+    if (!EmbyService.isSource(currentSource) &&
+        currentSource.isNotEmpty &&
         currentID.isNotEmpty &&
         !allSources.any((source) =>
             source.source == currentSource && source.id == currentID)) {
@@ -224,7 +228,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       if (!_isActiveLoad(loadGeneration)) return;
     }
     if (allSources.isEmpty) {
-      showError('未找到匹配结果');
+      if (!_showError) showError('未找到匹配结果');
       return;
     }
 
@@ -248,6 +252,10 @@ class _PlayerScreenState extends State<PlayerScreen>
       updateLoadingEmoji('⚡');
       currentDetail = await preferBestSource();
       if (!_isActiveLoad(loadGeneration)) return;
+    }
+    if (currentDetail!.episodes.isEmpty) {
+      showError('该媒体没有可播放的剧集或视频链接');
+      return;
     }
     setInfosByDetail(currentDetail!);
 
@@ -646,14 +654,25 @@ class _PlayerScreenState extends State<PlayerScreen>
 
       // 如果代理 URL 不为空，则将 newUrl encode 后拼接到代理 URL 后面
       String finalUrl = newUrl;
-      if (m3u8ProxyUrl.isNotEmpty) {
+      final isEmby = EmbyService.isSource(currentSource);
+      Map<String, String> mediaHeaders = const {};
+      if (isEmby) {
+        final base = await UserDataService.getServerUrl() ??
+            UserDataService.defaultServerUrl;
+        final request = EmbyService.mediaRequest(
+            base, newUrl, await UserDataService.getCookies());
+        finalUrl = request.url;
+        mediaHeaders = request.headers;
+      } else if (m3u8ProxyUrl.isNotEmpty) {
         final encodedUrl = Uri.encodeComponent(newUrl);
         finalUrl = '$m3u8ProxyUrl$encodedUrl';
         print("使用 M3U8 代理: $finalUrl");
       }
 
       // Cloudflare Worker 加速：m3u8/视频流经 Worker 转发，失败自动降级直连。
-      finalUrl = await WorkerProxyService.rewrite(finalUrl);
+      if (!isEmby) {
+        finalUrl = await WorkerProxyService.rewrite(finalUrl);
+      }
 
       if (_isCasting) {
         // 构建标题：{title} - {第 x 集} - {sourceName}
@@ -672,7 +691,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       } else {
         // 本地播放：根据设备类型调用对应播放器的 updateDataSource
         await _videoPlayerController?.updateDataSource(finalUrl,
-            startAt: startAt);
+            startAt: startAt, headers: mediaHeaders);
       }
     } catch (e) {
       // 静默处理错误
@@ -1059,6 +1078,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             surface:
                 isPC ? VideoPlayerSurface.desktop : VideoPlayerSurface.mobile,
             url: null,
+            autoFullscreen: !isPC,
             onBackPressed: _onBackPressed,
             onControllerCreated: (controller) {
               _videoPlayerController = controller;
@@ -2510,6 +2530,15 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   /// 获取视频详情
   Future<List<SearchResult>> fetchSourceDetail(String source, String id) async {
+    // Emby details require the logged-in backend even with local search enabled.
+    if (EmbyService.isSource(source)) {
+      try {
+        return await EmbyService.detail(source, id);
+      } catch (error) {
+        showError(error.toString());
+        return [];
+      }
+    }
     // 检查是否启用本地搜索
     final isLocalSearch = await UserDataService.getLocalSearch();
     if (isLocalSearch) {

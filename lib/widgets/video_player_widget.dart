@@ -35,6 +35,7 @@ class VideoPlayerWidget extends StatefulWidget {
   final Function(bool isWebFullscreen)? onWebFullscreenChanged;
   final VoidCallback? onExitFullScreen;
   final bool live;
+  final bool autoFullscreen;
   final Function(bool isPipMode)? onPipModeChanged;
 
   /// 弹幕匹配用（主站 `/api/danmu-external` 会用它提高命中率）。
@@ -61,6 +62,7 @@ class VideoPlayerWidget extends StatefulWidget {
     this.onWebFullscreenChanged,
     this.onExitFullScreen,
     this.live = false,
+    this.autoFullscreen = false,
     this.onPipModeChanged,
     this.doubanId,
     this.year,
@@ -140,6 +142,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   Player? _player;
   VideoController? _videoController;
   bool _isInitialized = false;
+  bool _didAutoFullscreen = false;
   bool _hasCompleted = false;
   bool _isLoadingVideo = false;
   String? _currentUrl;
@@ -269,6 +272,10 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         setState(() {
           _hasCompleted = false;
         });
+      } else if (widget.autoFullscreen && !_didAutoFullscreen) {
+        // Duration and playing can arrive in either order. Rebuild controls
+        // for both so the first successful playback always gets evaluated.
+        setState(() {});
       }
     });
 
@@ -395,6 +402,22 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   Future<void> _loadDanmakuPreference() async {
     final enabled = await UserDataService.getDanmakuEnabled();
     if (mounted) setState(() => _danmakuEnabled = enabled);
+  }
+
+  void _scheduleAutoFullscreen(VideoState state) {
+    if (!widget.autoFullscreen ||
+        _didAutoFullscreen ||
+        _isPipMode ||
+        !(Platform.isAndroid || Platform.isIOS) ||
+        _player?.state.playing != true ||
+        _player?.state.duration == Duration.zero) {
+      return;
+    }
+    _didAutoFullscreen = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted || _playerDisposed || !state.mounted) return;
+      if (!state.isFullscreen()) await state.enterFullscreen();
+    });
   }
 
   /// 进入全屏：转到固定的横屏方向并隐藏系统 UI。
@@ -861,13 +884,12 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       child: _isInitialized && _videoController != null
           ? Video(
               controller: _videoController!,
-              // media_kit 默认进全屏会把朝向限制成两个横屏、退全屏又清空成
-              // 「交给系统」。清空后 iOS 会沿用当前界面朝向，回到列表页就卡在横屏。
-              // 这里两个回调都接管：全屏和非全屏都允许竖屏 + 两个方向的横屏，
-              // 由重力决定，用户往左往右转都是正的。
+              // Fullscreen rotates to the preferred landscape direction;
+              // leaving restores portrait on phones and system policy on tablets.
               onEnterFullscreen: _onEnterNativeFullscreen,
               onExitFullscreen: _onExitNativeFullscreen,
               controls: (state) {
+                _scheduleAutoFullscreen(state);
                 final controls = widget.surface == VideoPlayerSurface.desktop
                     ? PCPlayerControls(
                         state: state,

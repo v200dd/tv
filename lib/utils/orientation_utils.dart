@@ -23,19 +23,8 @@ enum LandscapeDirection {
       value == 'right' ? LandscapeDirection.right : LandscapeDirection.left;
 }
 
-/// 屏幕朝向策略。
-///
-/// 手机上只有两个状态，避免历史上出现过的几类问题：
-///
-/// - **竖屏**（[lockPortrait]）：首页、列表页，以及播放页的非全屏状态。
-///   进播放页不会自动转横屏（这是用户明确要求的），退出播放页会回到竖屏，
-///   所以首页不会卡在横屏。
-/// - **横屏**（[forceLandscape]）：只有点了全屏按钮才进入，并且**只给一个方向**。
-///   之前两个横屏方向都放开，系统就按重力自己挑一个，手机竖着拿的时候挑哪个
-///   完全不确定，挑反了画面就是倒过来的，而且切换瞬间会重排一次——那就是用户
-///   看到的「闪一下然后是翻转的」。固定单方向后不再有这个二选一。
-///
-/// 平板不参与这套限制：横屏本来就是它的主要使用姿态，交给系统默认即可。
+/// Phones return to portrait outside fullscreen. Tablets restore system policy.
+/// Explicit fullscreen requests landscape on both phones and tablets.
 class OrientationUtils {
   const OrientationUtils._();
 
@@ -62,15 +51,15 @@ class OrientationUtils {
 
   /// 回到竖屏：非播放页、播放页非全屏、以及退出全屏时。
   static Future<void> lockPortrait() async {
-    if (!_isPhone) return;
+    if (!_isMobile) return;
     await SystemChrome.setPreferredOrientations(
-      const [DeviceOrientation.portraitUp],
+      _isPhone ? const [DeviceOrientation.portraitUp] : const [],
     );
   }
 
   /// 点全屏时转横屏。固定单一方向，避免系统按重力选反。
   static Future<void> forceLandscape() async {
-    if (!_isPhone) return;
+    if (!_isMobile) return;
     await SystemChrome.setPreferredOrientations([_direction.orientation]);
   }
 }
